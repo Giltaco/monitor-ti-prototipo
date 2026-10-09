@@ -8,12 +8,35 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import Mock
 
 from monitor_ti.core import DEFAULTS
 from monitor_ti.app import Application, handler_for
 
 
 class EndToEndTests(unittest.TestCase):
+    def test_telegram_incident_dispatch_and_secret_redaction(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cfg = dict(DEFAULTS, telegram={
+                "enabled": True, "bot_token": "private-token", "chat_id": "123"
+            })
+            app = Application(cfg, Path(folder))
+            app.notifier.close()
+            app.notifier = Mock()
+            try:
+                app._notify_changes([("opened", {
+                    "title": "CPU alta", "severity": "warning",
+                    "recommendation": "Revisar carga",
+                })])
+                app.notifier.send_alert.assert_called_once()
+                self.assertIn("CPU alta", app.notifier.send_alert.call_args.args[0])
+                state = app.state()
+                self.assertIsInstance(state, dict)
+                self.assertFalse(state["config"]["telegram"]["configured"] is False)
+                self.assertNotIn("private-token", json.dumps(state))
+            finally:
+                app.store.close()
+
     def test_service_failure_attention_and_confirmed_recovery(self):
         class DemoHandler(BaseHTTPRequestHandler):
             healthy = True

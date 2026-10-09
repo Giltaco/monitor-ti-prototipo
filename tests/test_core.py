@@ -1,6 +1,8 @@
 import json
+import threading
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from monitor_ti.collector import Collector
@@ -143,10 +145,42 @@ class MonitoringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "bad.json"
             for value in ({"interval_s": 0}, {"cpu_warn_percent": 999}, {"unknown": True}, {"expected_processes": "notepad.exe"}, {"retention_hours": -1},
-                          {"temperature_provider": "inventado"}, {"service_latency_warn_ms": 100, "service_latency_clear_ms": 200}):
+                          {"temperature_provider": "inventado"}, {"service_latency_warn_ms": 100, "service_latency_clear_ms": 200},
+                          {"telegram": True}, {"telegram": {"enabled": "yes"}}):
                 path.write_text(json.dumps(value), encoding="utf-8")
                 with self.assertRaises(ValueError):
                     load_config(path)
+
+    def test_config_accepts_telegram_without_mutating_defaults(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "config.json"
+            path.write_text(json.dumps({"telegram": {
+                "enabled": True, "bot_token": "token", "chat_id": "123"
+            }}), encoding="utf-8")
+            config = load_config(path)
+        self.assertTrue(config["telegram"]["enabled"])
+        self.assertFalse(DEFAULTS["telegram"]["enabled"])
+
+    def test_telegram_send_runs_on_background_thread(self):
+        from monitor_ti.notifier import TelegramNotifier
+
+        completed = threading.Event()
+        caller_thread = threading.get_ident()
+        sender_threads = []
+
+        def fake_send(*args):
+            sender_threads.append(threading.get_ident())
+            completed.set()
+            return True
+
+        notifier = TelegramNotifier("token", "123")
+        try:
+            with patch("monitor_ti.notifier.send_telegram_alert", side_effect=fake_send):
+                self.assertTrue(notifier.send_alert("alert"))
+                self.assertTrue(completed.wait(2))
+            self.assertNotEqual(sender_threads[0], caller_thread)
+        finally:
+            notifier.close()
 
 
 if __name__ == "__main__":

@@ -53,11 +53,13 @@ DEFAULTS = {
     "service_latency_clear_ms": None,
     "service_latency_hold_s": 15,
     "retention_hours": 24,
+    "telegram": {"enabled": False, "bot_token": "", "chat_id": ""},
 }
 
 
 def load_config(path=None):
     cfg = dict(DEFAULTS)
+    cfg["telegram"] = dict(DEFAULTS["telegram"])
     if path:
         supplied = json.loads(Path(path).read_text(encoding="utf-8-sig"))
         if not isinstance(supplied, dict):
@@ -65,7 +67,15 @@ def load_config(path=None):
         unknown = set(supplied) - set(DEFAULTS)
         if unknown:
             raise ValueError("Opciones desconocidas: " + ", ".join(sorted(unknown)))
-        cfg.update(supplied)
+        cfg.update({key: value for key, value in supplied.items() if key != "telegram"})
+        if "telegram" in supplied:
+            telegram = supplied["telegram"]
+            if not isinstance(telegram, dict):
+                raise ValueError("telegram debe ser un objeto.")
+            unknown_telegram = set(telegram) - set(DEFAULTS["telegram"])
+            if unknown_telegram:
+                raise ValueError("Opciones de Telegram desconocidas: " + ", ".join(sorted(unknown_telegram)))
+            cfg["telegram"].update(telegram)
     for key in ("interval_s", "service_every_s", "retention_hours", "service_failures"):
         if isinstance(cfg[key], bool) or not isinstance(cfg[key], (int, float)) or not math.isfinite(cfg[key]) or cfg[key] <= 0:
             raise ValueError(f"{key} debe ser un número positivo.")
@@ -90,6 +100,12 @@ def load_config(path=None):
         raise ValueError("temperature_warn_c debe ser un número finito o null.")
     if cfg["temperature_provider"] not in ("auto", "psutil", "librehardwaremonitor"):
         raise ValueError("temperature_provider debe ser auto, psutil o librehardwaremonitor.")
+    telegram = cfg["telegram"]
+    if not isinstance(telegram["enabled"], bool):
+        raise ValueError("telegram.enabled debe ser booleano.")
+    for key in ("bot_token", "chat_id"):
+        if not isinstance(telegram[key], str):
+            raise ValueError(f"telegram.{key} debe ser texto.")
     for key in ("service_latency_warn_ms", "service_latency_clear_ms"):
         value = cfg[key]
         if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0):

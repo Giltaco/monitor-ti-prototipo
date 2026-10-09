@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from .collector import Collector
 from .core import DiskTrend, RuleEngine, Store, load_config
+from .notifier import TelegramNotifier
 
 ROOT = Path(__file__).resolve().parent
 LOG = logging.getLogger("monitor_ti")
@@ -27,6 +28,10 @@ class Application:
         self.store = Store(data_dir / "monitor.sqlite3")
         self.engine = RuleEngine(config)
         self.trend = DiskTrend()
+        telegram = config["telegram"]
+        self.notifier = TelegramNotifier(
+            telegram["bot_token"], telegram["chat_id"], telegram["enabled"]
+        )
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.sample = None
@@ -45,11 +50,28 @@ class Application:
                     self.sample = sample
                     self.last_read = time.monotonic()
                     self.last_error = None
+                self._notify_changes(changes)
             except Exception:
                 LOG.exception("No se pudo completar la lectura")
                 with self.lock:
                     self.last_error = "No se completó la última lectura; revisar la consola."
             self.stop.wait(max(0.05, self.config["interval_s"] - (time.monotonic() - cycle)))
+
+    def _notify_changes(self, changes):
+        labels = {
+            "opened": "Nueva alerta",
+            "severity": "Cambio de severidad",
+            "recovered": "Incidente recuperado",
+        }
+        for event, incident in changes:
+            label = labels.get(event)
+            if label:
+                message = (
+                    f"{label}: {incident['title']}\n"
+                    f"Severidad: {incident['severity']}\n"
+                    f"Recomendación: {incident['recommendation']}"
+                )
+                self.notifier.send_alert(message)
 
     def state(self):
         with self.lock:
@@ -69,10 +91,15 @@ class Application:
                 level = "unknown"
             else:
                 level = "ok"
+            public_config = dict(self.config)
+            public_config["telegram"] = {
+                "enabled": self.config["telegram"]["enabled"],
+                "configured": bool(self.config["telegram"]["bot_token"] and self.config["telegram"]["chat_id"]),
+            }
             return {"sample": sample, "active": active, "incidents": self.store.incidents(),
                     "fresh": fresh, "complete": mandatory_complete, "level": level,
                     "age_seconds": None if age is None else round(age, 1), "error": self.last_error,
-                    "config": self.config,
+                    "config": public_config,
                     "limits": {"scope": "Una computadora local", "temperature_windows": "Requiere un proveedor adicional; esta base sólo usa sensores expuestos por psutil.",
                                "network": "Tráfico observado por interfaz; no es un speedtest.",
                                "effective_action": "Registrar atención no demuestra una solución; comprobar recuperación de la métrica.",
@@ -164,6 +191,7 @@ def main():
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(app))
     except OSError as exc:
+        app.notifier.close()
         app.store.close()
         if getattr(exc, "winerror", None) in (10013, 10048) or getattr(exc, "errno", None) in (13, 48, 98, 10013, 10048):
             parser.error(f"No se pudo usar 127.0.0.1:{args.port}; el puerto está ocupado o reservado. Prueba --port 9876.")
@@ -179,6 +207,7 @@ def main():
     finally:
         app.stop.set()
         worker.join(timeout=10)
+        app.notifier.close()
         server.server_close()
         if not worker.is_alive():
             app.collector.close()
