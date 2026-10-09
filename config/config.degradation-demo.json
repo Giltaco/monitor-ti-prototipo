@@ -1,0 +1,10 @@
+{
+  "interval_s": 2,
+  "recovery_s": 4,
+  "service_url": "http://127.0.0.1:8766/",
+  "service_every_s": 2,
+  "service_failures": 3,
+  "service_latency_warn_ms": 500,
+  "service_latency_clear_ms": 300,
+  "service_latency_hold_s": 4
+}

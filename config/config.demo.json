@@ -1,0 +1,7 @@
+{
+  "interval_s": 2,
+  "recovery_s": 4,
+  "service_url": "http://127.0.0.1:8766/",
+  "service_every_s": 2,
+  "service_failures": 3
+}

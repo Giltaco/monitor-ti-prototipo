@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.coverage
+.pytest_cache/
+
+# Telemetría e identidad locales: nunca se publican.
+data/*
+!data/.gitkeep
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Configuración privada; se conserva sólo el ejemplo versionado.
+config/config.json
+.env
+.env.*
+
+# Proveedores/binarios opcionales obtenidos por el usuario.
+providers/
+*.dll
+
+# IDE y sistema operativo.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

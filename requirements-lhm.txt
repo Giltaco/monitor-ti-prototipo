@@ -1,0 +1,2 @@
+# Sólo para LibreHardwareMonitorLib.dll obtenido del repositorio oficial.
+pythonnet>=3.0,<4
